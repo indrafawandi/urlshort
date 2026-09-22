@@ -25,6 +25,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
 
+RUN chown -R app:app /app
 USER app
 EXPOSE 8000
 
