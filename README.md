@@ -4,6 +4,20 @@ A small, production-shaped URL shortening service. Built as a technical
 exercise: minimal in scope, but structured the way a real service should be
 — tested, containerized, documented, and set up with CI from the start.
 
+## Brief → how it's satisfied
+
+The exercise asked for a simple app, production-shaped, handed off to
+another engineer. Point by point:
+
+| Requirement | Where |
+|---|---|
+| Built with AI-assisted development | [docs/AI_USAGE.md](docs/AI_USAGE.md) — built with Claude as pair-programmer; what it did, what was verified by hand before each commit |
+| Git & GitHub with a proper workflow | Trunk-based, feature branch per change, `--no-ff` merges, Conventional Commits — see the commit history and [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Runs with Docker | `docker compose up --build` — see Quick start below |
+| Automated testing | 15 tests (unit + API-level), 96% coverage, enforced in CI on every push/PR — see Running tests below |
+| Documentation for the next engineer | This README, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (design decisions, trade-offs, known limitations), [infra/README.md](infra/README.md) (deployment), [CONTRIBUTING.md](CONTRIBUTING.md) (workflow) |
+| No VPS/server provided — deployment approach is my call | Deployed to AWS ECS Fargate via Terraform + GitHub Actions, one click to stand up or tear down — see Deployment note below. Verified live, then destroyed to avoid ongoing cost (this was a timeboxed exercise, not a service anyone depends on) |
+
 ## Stack
 
 - **Python 3.12 / FastAPI** — small surface area, automatic OpenAPI docs, easy to test.
@@ -94,6 +108,18 @@ docs/            Architecture notes and decisions
 
 ## Deployment note
 
-A Terraform stack to deploy this to **AWS ECS Fargate** (dedicated VPC, ALB,
-no RDS/NAT — sized for a short-lived demo, meant to be `terraform destroy`'d
-afterward) lives in [infra/aws-ecs-fargate/](infra/aws-ecs-fargate/README.md).
+No hosting/VPS was provisioned for this exercise, so there's no long-lived
+public deployment. To prove the Docker image is actually deployable (not
+just "builds successfully in CI"), it was deployed end-to-end to **AWS ECS
+Fargate** using the Terraform + GitHub Actions pipeline in
+[infra/](infra/README.md) — dedicated VPC, ALB, ECR, OIDC auth (no static
+AWS keys), one click to deploy or destroy from the Actions tab.
+
+**Verified live** at `http://urlshort-alb-981073736.ap-southeast-1.elb.amazonaws.com`
+on 2026-09-22 — health check, link creation, redirect, and click-count
+tracking all confirmed working against the real AWS-hosted instance. The
+stack was destroyed after verification (`Actions → Destroy AWS stack`) to
+avoid leaving billable resources running, so that URL will 404/time out by
+the time anyone else opens it. To stand it back up: `infra/README.md` has
+the one-time bootstrap step; every deploy after that is a single workflow
+trigger.
