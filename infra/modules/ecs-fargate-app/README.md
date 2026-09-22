@@ -13,7 +13,7 @@ of how to call it.
 
 | Name | Description | Default |
 |---|---|---|
-| `aws_region` | Region (used for CloudWatch log group config) | — required |
+| `aws_region` | Region (used for CloudWatch log group config) | `ap-southeast-1` |
 | `project_name` | Prefix for all resource names/tags | `urlshort` |
 | `vpc_cidr` | CIDR for the dedicated VPC | `10.20.0.0/16` |
 | `public_subnet_cidrs` | 2 CIDRs, one per AZ | `["10.20.1.0/24", "10.20.2.0/24"]` |

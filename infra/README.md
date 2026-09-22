@@ -46,3 +46,31 @@ secrets), plus the S3/DynamoDB backend Terraform needs so state survives
 between CI runs (a GitHub Actions runner's disk is wiped after every job —
 local state, like the earlier single-folder version of this stack used,
 would mean every CI run starts from zero and tries to recreate everything).
+
+## Troubleshooting
+
+Real issues hit setting this up, in case they recur:
+
+**`Not authorized to perform sts:AssumeRoleWithWebIdentity`, even though
+the trust policy "looks" correct.** GitHub's OIDC subject claim now embeds
+immutable numeric owner/repo IDs —
+`repo:owner@111387039/repo@1380847485:ref:refs/heads/main` — not the
+plain `repo:owner/repo:ref:...` format used to assume. The trust policy in
+`bootstrap/main.tf` already accounts for this (wildcards the ID segment
+with `@*`), but if this breaks again in the future (GitHub could change
+the format again), don't guess from the policy JSON — check CloudTrail
+(Event history, event name `AssumeRoleWithWebIdentity`, look at
+`userIdentity.principalId` in the raw event) for the *actual* subject
+value GitHub sent, and match the trust policy to that.
+
+**`IllegalLocationConstraintException` on `terraform init`.** The
+`-backend-config="region=..."` passed doesn't match the region the S3
+state bucket actually lives in. Whatever `aws_region` you used for
+`bootstrap`'s `terraform apply` is the one true answer — make sure
+`environments/demo`'s `aws_region` var (and the `AWS_REGION` GitHub
+variable) match it exactly. See `bootstrap/README.md` for the fuller
+version of this.
+
+**`Unable to assume the service linked role` when ECS creates the
+service.** First-ever ECS use in a fresh AWS account. See
+`bootstrap/README.md`'s "Known gotcha" section.

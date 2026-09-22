@@ -70,25 +70,39 @@ it's exposed publicly — see "Next steps."
 2. Build the Docker image and smoke-test it (`docker run` + hit `/healthz`)
    to catch "works on my machine, breaks in the image" issues before merge.
 
-There's no CD stage because there's no target environment for this exercise
-(no VPS/hosting was provisioned). See "How this would be deployed" below for
-what that stage would look like.
+A separate CD pipeline (`.github/workflows/deploy.yml` /
+`destroy.yml`, manually triggered) pushes the image to ECR and applies the
+Terraform stack in `infra/` — see `infra/README.md`. This isn't wired to
+run automatically on every merge to `main`: the target environment is a
+short-lived demo stack meant to be spun up and torn down deliberately, not
+a long-running environment that should redeploy on every commit. If this
+becomes a real, continuously-running service, that's the one thing to
+change — add `push: { branches: [main] }` to `deploy.yml`'s triggers.
 
-## How this would be deployed (given real infrastructure)
+## What was actually deployed (not just planned)
 
-This section exists so the next engineer isn't guessing:
+Unlike a typical take-home where "how this would be deployed" stays
+hypothetical, this was actually built and run: AWS ECS Fargate, behind an
+ALB, image pulled from ECR, provisioned by the Terraform module in
+`infra/modules/ecs-fargate-app/` and deployed via GitHub Actions using
+OIDC (no static AWS keys). Verified live once, then destroyed — see the
+README's "Deployment note" for the confirmed-working URL and date, and
+`infra/README.md` for how to stand it back up.
 
-1. Add a registry-push step to CI after the Docker build (e.g. push to
-   GHCR/ECR on merge to `main`, tagged with the git SHA).
-2. Run Postgres as a managed service (RDS, Cloud SQL, etc.) rather than the
-   `db` container in `docker-compose.yml`, which is dev/demo-only.
-3. Introduce Alembic for migrations before the first schema change ships;
+What that deployment deliberately leaves out, and would need adding before
+this is a real, continuously-running production service:
+
+1. Run Postgres as a managed service (RDS, Cloud SQL, etc.) rather than the
+   demo's default SQLite-inside-the-container, which loses data on every
+   task restart. (`docker-compose.yml`'s Postgres service is dev/demo-only
+   too, for the same reason — see "Key decisions" above.)
+2. Introduce Alembic for migrations before the first schema change ships;
    `Base.metadata.create_all` does not handle schema evolution.
-4. Put the service behind a load balancer with `/healthz` as the health
-   check target (already implemented and used by the container's own
-   `HEALTHCHECK`).
-5. Add structured logging and basic metrics (request count/latency, link
-   creation rate) before treating this as a real production service.
+3. HTTPS (ACM cert + domain) — the ALB is HTTP-only right now.
+4. Structured logging and basic metrics (request count/latency, link
+   creation rate) beyond the raw CloudWatch logs currently shipped.
+5. Autoscaling — the ECS service runs a fixed `desired_count`, not hooked
+   up to a scaling target.
 
 ## Known limitations / explicitly out of scope
 

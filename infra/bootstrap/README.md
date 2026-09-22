@@ -23,8 +23,19 @@ terraform init
 terraform apply \
   -var="state_bucket_name=<something-globally-unique, e.g. urlshort-tfstate-fawandi>" \
   -var="github_org=<your GitHub username or org>" \
-  -var="github_repo=urlshort"
+  -var="github_repo=urlshort" \
+  -var="aws_region=<the region you actually want everything in, e.g. ap-southeast-1>"
 ```
+
+**Always pass `aws_region` explicitly.** Leaving it out silently falls
+back to the default in `variables.tf` — which may not be the region you
+think you're using. This exact mistake happened once already: the state
+bucket got created in one region while `AWS_REGION` in GitHub was set to
+a different one, and `terraform init` failed with
+`IllegalLocationConstraintException` because the backend config's region
+didn't match the bucket's actual home region. Whatever region you pass
+here is what `environments/demo` needs to match later, in its own
+`aws_region` var and in the `AWS_REGION` GitHub repo variable below.
 
 ## Then, wire the outputs into GitHub
 
@@ -49,6 +60,24 @@ choices):
 Once those five variables are set, push to `main` (or run the `Deploy`
 workflow manually) and the rest happens without touching AWS by hand
 again.
+
+## Known gotcha: first-ever ECS use in an account
+
+If this is the very first time ECS has been used in this AWS account,
+`deploy.yml`'s `terraform apply` may fail creating the ECS service with
+`Unable to assume the service linked role`. This IAM role
+(`AWSServiceRoleForECS`) is normally auto-created the first time you use
+ECS via the console; via pure API/Terraform it needs
+`iam:CreateServiceLinkedRole`, which this bootstrap's policy already
+grants — so this should now self-heal on its own. If it doesn't (e.g. an
+older/cached policy), the one-time manual fix is:
+
+```bash
+aws iam create-service-linked-role --aws-service-name ecs.amazonaws.com
+```
+
+(If it says the role already exists, that's fine — it means this isn't
+your problem.)
 
 ## State for this bootstrap stack itself
 

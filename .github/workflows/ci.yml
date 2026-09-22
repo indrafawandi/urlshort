@@ -40,10 +40,28 @@ jobs:
       - name: Smoke test container
         run: |
           docker run -d --name urlshort-ci -p 8000:8000 urlshort:ci
-          for i in $(seq 1 10); do
-            if curl -sf http://localhost:8000/healthz; then break; fi
+
+          healthy=0
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8000/healthz > /dev/null; then
+              healthy=1
+              break
+            fi
             sleep 2
           done
-          curl -sf http://localhost:8000/healthz
+
+          # Always show what happened inside the container, pass or fail —
+          # this is the actual diagnostic info; don't let a failed curl
+          # (with `bash -e`) skip straight past it.
+          echo "---- container logs ----"
           docker logs urlshort-ci
-          docker stop urlshort-ci
+          echo "---- container status ----"
+          docker inspect urlshort-ci --format '{{.State.Status}} (exit code {{.State.ExitCode}})'
+
+          docker stop urlshort-ci > /dev/null 2>&1 || true
+          docker rm urlshort-ci > /dev/null 2>&1 || true
+
+          if [ "$healthy" -ne 1 ]; then
+            echo "::error::Container never became healthy — see logs above."
+            exit 1
+          fi

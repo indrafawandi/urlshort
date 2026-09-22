@@ -96,12 +96,27 @@ data "aws_iam_policy_document" "github_oidc_assume" {
       values   = ["sts.amazonaws.com"]
     }
     # Scopes the role to THIS repo only, and (by default) any branch/PR
-    # in it. Tighten the ref to e.g. "repo:<org>/<repo>:ref:refs/heads/main"
-    # if you only want main-branch pushes to be able to assume this role.
+    # in it. Tighten the ref to e.g.
+    # "repo:<org>@*/<repo>@*:ref:refs/heads/main" if you only want
+    # main-branch pushes to be able to assume this role.
+    #
+    # NOTE: GitHub's OIDC subject claim now embeds immutable numeric owner
+    # and repo IDs, e.g. "repo:indrafawandi@111387039/urlshort@1380847485:
+    # ref:refs/heads/main" — NOT the older "repo:owner/repo:ref:..." format
+    # this used to assume. This is a deliberate GitHub security change (it
+    # stops someone from hijacking a trust policy by recreating a deleted
+    # repo/renamed-into username with the same name later) — so the
+    # pattern below wildcards the ID segment with "@*" rather than trying
+    # to match the plain "owner/repo" string. If you ever see
+    # "Not authorized to perform sts:AssumeRoleWithWebIdentity" with an
+    # otherwise-correct-looking trust policy, check the actual `sub` value
+    # in CloudTrail (Event history, event name AssumeRoleWithWebIdentity)
+    # before assuming it's a typo — the claim format itself may have
+    # changed again by the time you read this.
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values = ["repo:${var.github_org}@*/${var.github_repo}@*:*"]
+      values   = ["repo:${var.github_org}@*/${var.github_repo}@*:*"]
     }
   }
 }
@@ -163,6 +178,11 @@ data "aws_iam_policy_document" "github_actions" {
       "iam:ListAttachedRolePolicies",
       "iam:GetRolePolicy",
       "iam:GetPolicy",
+      # Lets ECS auto-provision AWSServiceRoleForECS on first use in a
+      # fresh account, instead of needing a one-time manual
+      # `aws iam create-service-linked-role --aws-service-name
+      # ecs.amazonaws.com` before the first ECS service can be created.
+      "iam:CreateServiceLinkedRole",
     ]
     resources = ["*"]
   }
