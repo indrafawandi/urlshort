@@ -94,8 +94,6 @@ docs/            Architecture notes and decisions
 
 ## Deployment note
 
-No hosting/VPS was provisioned for this exercise, so nothing is deployed
-live. The Docker image is what a real deployment would ship: it's built and
-smoke-tested in CI (see `.github/workflows/ci.yml`) but not pushed to a
-registry or run anywhere persistent. `docs/ARCHITECTURE.md` sketches how this
-would be deployed given real infrastructure.
+A Terraform stack to deploy this to **AWS ECS Fargate** (dedicated VPC, ALB,
+no RDS/NAT — sized for a short-lived demo, meant to be `terraform destroy`'d
+afterward) lives in [infra/aws-ecs-fargate/](infra/aws-ecs-fargate/README.md).

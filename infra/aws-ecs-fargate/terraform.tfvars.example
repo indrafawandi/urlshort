@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars and fill in — see README.md for the two-step
+# apply (ECR must exist and have an image pushed before container_image
+# has a real value).
+
+aws_region   = "ap-southeast-1"
+project_name = "urlshort"
+
+# Fill this in after step 1 of the README (terraform apply -target +
+# docker push). Example:
+# container_image = "123456789012.dkr.ecr.ap-southeast-1.amazonaws.com/urlshort:latest"
+container_image = ""
