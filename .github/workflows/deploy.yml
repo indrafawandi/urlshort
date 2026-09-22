@@ -1,0 +1,101 @@
+name: Deploy to AWS (ECS Fargate)
+
+# Manual trigger on purpose — this stack costs money while it's up and is
+# meant to be a short-lived demo, not something that redeploys on every
+# push. Trigger it from the Actions tab when you actually want it live.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to confirm you want to stand up real AWS resources'
+        required: true
+
+permissions:
+  id-token: write # required for OIDC -> AWS role assumption
+  contents: read
+
+env:
+  TF_DIR: infra/environments/demo
+
+jobs:
+  deploy:
+    if: github.event.inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=urlshort/demo/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ vars.TF_LOCK_TABLE }}"
+
+      # Chicken-and-egg: the ECR repo has to exist before we can push an
+      # image to it, and the image URI has to exist before the rest of the
+      # stack (task definition references it) can apply cleanly. So: apply
+      # just the ECR repo first, with a throwaway placeholder for the
+      # image var (unused by this targeted apply, but Terraform still
+      # requires it to be set).
+      - name: Terraform apply (ECR repo only)
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform apply -auto-approve \
+            -target=module.app.aws_ecr_repository.app \
+            -var="aws_region=${{ vars.AWS_REGION }}" \
+            -var="project_name=${{ vars.PROJECT_NAME }}" \
+            -var="container_image=placeholder"
+
+      - name: Get ECR repository URL
+        id: ecr
+        working-directory: ${{ env.TF_DIR }}
+        run: echo "url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.url }}:${{ github.sha }}"
+          aws ecr get-login-password --region "${{ vars.AWS_REGION }}" \
+            | docker login --username AWS --password-stdin "${{ steps.ecr.outputs.url }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Terraform apply (full stack)
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform apply -auto-approve \
+            -var="aws_region=${{ vars.AWS_REGION }}" \
+            -var="project_name=${{ vars.PROJECT_NAME }}" \
+            -var="container_image=${{ env.IMAGE }}"
+
+      - name: Show app URL
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          echo "### Deployed :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "App URL: $(terraform output -raw app_url)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          URL=$(terraform output -raw app_url)
+          for i in $(seq 1 15); do
+            if curl -sf "$URL/healthz" > /dev/null; then
+              echo "Healthy."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::App never became healthy at $URL/healthz"
+          exit 1
